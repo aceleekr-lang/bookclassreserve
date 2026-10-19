@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>이야기책 교육 접수 관리</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<style>
+  :root{--g:#2f8f5b;--g2:#1f6e44;--b:#2b6cb0;--bg:#f3f5f4;--card:#fff;--txt:#222;--sub:#666;--line:#ddd;--red:#d33;}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Pretendard","Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:var(--bg);color:var(--txt);line-height:1.5;font-size:14px}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0}
+  header .meta{color:var(--sub);font-size:13px}
+  .card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .card h2{font-size:15px;margin:0 0 10px;color:var(--g2)}
+  .btn{padding:9px 14px;border:0;border-radius:8px;background:var(--g);color:#fff;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+  .btn.sec{background:#e9eeeb;color:var(--txt)}
+  .btn.blue{background:var(--b)}
+  .btn.red{background:var(--red)}
+  .btn.sm{padding:5px 9px;font-size:12px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  input[type=text],input[type=password],input[type=datetime-local],input[type=url],select,textarea{font-size:14px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;font-family:inherit;background:#fafafa}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--g);border-color:transparent;background:#fff}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .row label{font-weight:600;white-space:nowrap}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+  .stat{background:#f0faf4;border-radius:10px;padding:12px;text-align:center}
+  .stat b{display:block;font-size:24px;color:var(--g2)}
+  .stat span{font-size:12px;color:var(--sub)}
+  .tbl{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px;white-space:nowrap}
+  th,td{padding:8px 9px;border-bottom:1px solid #eee;text-align:left;vertical-align:middle}
+  th{background:#f6f8f7;font-weight:700;color:#444;cursor:pointer;user-select:none;position:sticky;top:0}
+  th.sorted::after{content:" ▲";font-size:10px}
+  th.sorted.desc::after{content:" ▼"}
+  tr:hover td{background:#fbfdfc}
+  .tag{display:inline-block;padding:2px 7px;border-radius:12px;font-size:11px;font-weight:600}
+  .tag.g{background:#dff3e6;color:var(--g2)}
+  .tag.b{background:#dde9f7;color:var(--b)}
+  .tag.y{background:#fdf3d7;color:#8a6500}
+  .tag.gray{background:#eee;color:#666}
+  .hidden{display:none}
+  .msg{font-size:13px;margin-top:8px}
+  .msg.ok{color:var(--g2)}
+  .msg.err{color:var(--red)}
+  #qrBox{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-top:10px}
+  #qrCanvas{border:1px solid var(--line);border-radius:8px;background:#fff}
+  .login{max-width:360px;margin:80px auto;text-align:center}
+  .login input{width:100%;margin:10px 0}
+  .login .btn{width:100%}
+  textarea.memo{width:100%;min-height:60px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+  .modal .box{background:#fff;border-radius:12px;padding:20px;width:100%;max-width:480px;max-height:90vh;overflow:auto}
+  .modal dl{display:grid;grid-template-columns:90px 1fr;gap:6px 10px;margin:0 0 12px}
+  .modal dt{color:var(--sub)}
+  .modal dd{margin:0;font-weight:500}
+  .ptn{color:var(--sub);font-size:12px;margin-top:4px}
+  @media(max-width:600px){.card{padding:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 로그인 -->
+  <div id="loginView" class="login card">
+    <h1 style="font-size:18px;margin:0">이야기책 교육 접수 관리</h1>
+    <p style="color:var(--sub);font-size:13px">가곡재생팀 전용</p>
+    <input type="password" id="pw" placeholder="관리자 비밀번호" autocomplete="current-password">
+    <button class="btn" id="loginBtn">들어가기</button>
+    <div class="msg err hidden" id="loginErr">비밀번호가 맞지 않거나 연결에 실패했습니다.</div>
+  </div>
+
+  <!-- 관리 화면 -->
+  <div id="adminView" class="hidden">
+    <header>
+      <div>
+        <h1>AI를 활용한 가곡동 이야기 책 만들기 교육 — 접수 관리</h1>
+        <div class="meta" id="lastLoaded"></div>
+      </div>
+      <div class="row">
+        <button class="btn sec sm" id="reloadBtn">새로고침</button>
+        <button class="btn sec sm" id="logoutBtn">나가기</button>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="stats">
+        <div class="stat"><b id="stTotal">0</b><span>전체 접수</span></div>
+        <div class="stat"><b id="stGagok">0</b><span>가곡동 주민</span></div>
+        <div class="stat"><b id="stPrior">0</b><span>기존 교육 수료</span></div>
+        <div class="stat"><b id="stToday">0</b><span>오늘 접수</span></div>
+        <div class="stat"><b id="stStatus">-</b><span id="stStatusLabel">접수 상태</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>접수자 명단</h2>
+      <div class="row" style="margin-bottom:10px">
+        <input type="text" id="search" placeholder="이름·연락처·지역 검색" style="min-width:200px">
+        <select id="filterRes">
+          <option value="">거주지 전체</option>
+          <option>가곡동</option>
+          <option>밀양시(가곡동 외)</option>
+          <option>밀양시 외</option>
+        </select>
+        <select id="filterPrior">
+          <option value="">수료 여부 전체</option>
+          <option>수료</option>
+          <option>미수료</option>
+        </select>
+        <span style="flex:1"></span>
+        <button class="btn blue" id="xlsxBtn">엑셀 다운로드</button>
+        <button class="btn sec" id="csvBtn">CSV</button>
+        <button class="btn sec" id="copyPhonesBtn">연락처 복사</button>
+      </div>
+      <div class="tbl">
+        <table id="tbl">
+          <thead><tr>
+            <th data-k="idx">No</th>
+            <th data-k="created_at">접수일시</th>
+            <th data-k="name">성명</th>
+            <th data-k="phone">연락처</th>
+            <th data-k="gender">성별</th>
+            <th data-k="birth_date">생년월일</th>
+            <th data-k="residence">거주지</th>
+            <th data-k="prior_course">기존 수료</th>
+            <th data-k="referral">알게 된 경로</th>
+            <th data-k="memo">메모</th>
+            <th></th>
+          </tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="msg" id="listMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>접수 설정</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label for="closeAt">접수 마감</label>
+        <input type="datetime-local" id="closeAt">
+        <button class="btn sm" id="saveCloseBtn">저장</button>
+        <button class="btn sec sm" id="resetCloseBtn">기본값(11/2 23:59)</button>
+      </div>
+      <div class="ptn">마감 시각이 지나면 신청 페이지가 자동으로 "접수 마감" 화면으로 바뀝니다. 비우고 저장하면 마감 없이 계속 받습니다.</div>
+      <div class="msg" id="closeMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>신청 페이지 링크 · QR 제작</h2>
+      <div class="row" style="margin-bottom:8px">
+        <label for="applyUrl">신청 페이지 주소</label>
+        <input type="url" id="applyUrl" placeholder="https://..." style="flex:1;min-width:240px">
+        <button class="btn sm" id="saveUrlBtn">저장</button>
+        <button class="btn sec sm" id="copyUrlBtn">링크 복사</button>
+      </div>
+      <div class="row">
+        <label>QR 크기</label>
+        <select id="qrSize">
+          <option value="512">512px (웹·SNS)</option>
+          <option value="1024" selected>1024px (포스터·인쇄)</option>
+          <option value="2048">2048px (현수막)</option>
+        </select>
+        <button class="btn sm" id="qrBtn">QR 만들기</button>
+        <button class="btn blue sm hidden" id="qrDownBtn">PNG 다운로드</button>
+      </div>
+      <div id="qrBox" class="hidden">
+        <canvas id="qrCanvas"></canvas>
+        <div class="ptn">포스터 "교육신청" 칸에 넣을 때는 1024px 이상을 쓰세요.<br>테두리(여백)는 이미 포함되어 있습니다.</div>
+      </div>
+      <div class="msg" id="urlMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2>관리자 비밀번호 변경</h2>
+      <div class="row">
+        <input type="password" id="newPw" placeholder="새 비밀번호" autocomplete="new-password">
+        <button class="btn sec sm" id="pwBtn">변경</button>
+      </div>
+      <div class="msg" id="pwMsg"></div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal hidden"></div>
+</div>
+
+<script>
+/* ===== 설정 ===== */
+const SUPABASE_URL = 'https://snaldhxucwsaifqrccih.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNuYWxkaHh1Y3dzYWlmcXJjY2loIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyNzIwNjAsImV4cCI6MjEwMzg0ODA2MH0.TUdhun_cBHsool0e2FZOOfznjFoC_u5B0MJCl1dTDhI';
+const DEFAULT_CLOSE_AT = '2026-11-02T23:59:59+09:00';
+/* ================ */
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+let PW = sessionStorage.getItem('sb_admin_pw') || '';
+let rows = [], settings = {}, sortKey = 'created_at', sortDesc = false;
+
+const KST = 'Asia/Seoul';
+const fmtDT = s => s ? new Date(s).toLocaleString('ko-KR', {timeZone:KST, year:'2-digit', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false}) : '';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const resLabel = r => r.residence === '밀양시(가곡동 외)' && r.residence_detail ? `밀양시 ${r.residence_detail}` : (r.residence || '');
+const setMsg = (id, text, ok=true) => { const el=$(id); el.textContent=text; el.className='msg '+(ok?'ok':'err'); if(text) setTimeout(()=>{el.textContent='';},3000); };
+
+// ---- 로그인 ----
+async function tryLogin(pw) {
+  const { data, error } = await sb.rpc('storybook_check_pw', { p_pw: pw });
+  if (error || !data) return false;
+  PW = pw; sessionStorage.setItem('sb_admin_pw', pw);
+  return true;
+}
+$('loginBtn').onclick = async () => {
+  $('loginErr').classList.add('hidden');
+  $('loginBtn').disabled = true;
+  const ok = await tryLogin($('pw').value);
+  $('loginBtn').disabled = false;
+  if (ok) showAdmin(); else $('loginErr').classList.remove('hidden');
+};
+$('pw').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+$('logoutBtn').onclick = () => { sessionStorage.removeItem('sb_admin_pw'); location.reload(); };
+
+async function showAdmin() {
+  $('loginView').classList.add('hidden');
+  $('adminView').classList.remove('hidden');
+  await loadAll();
+}
+if (PW) tryLogin(PW).then(ok => ok ? showAdmin() : sessionStorage.removeItem('sb_admin_pw'));
+
+// ---- 데이터 로드 ----
+async function loadAll() {
+  const [a, s] = await Promise.all([
+    sb.rpc('storybook_admin_list', { p_pw: PW }),
+    sb.from('storybook_settings').select('key,value')
+  ]);
+  if (a.error) { setMsg('listMsg', '목록을 불러오지 못했습니다: ' + a.error.message, false); return; }
+  rows = a.data || [];
+  settings = Object.fromEntries((s.data || []).map(r => [r.key, r.value]));
+  $('lastLoaded').textContent = '불러온 시각 ' + fmtDT(new Date().toISOString());
+  renderStats(); renderTable(); renderSettings();
+}
+$('reloadBtn').onclick = loadAll;
+
+function renderStats() {
+  const today = new Date().toLocaleDateString('ko-KR', {timeZone:KST});
+  $('stTotal').textContent = rows.length;
+  $('stGagok').textContent = rows.filter(r => r.residence === '가곡동').length;
+  $('stPrior').textContent = rows.filter(r => r.prior_course === '수료').length;
+  $('stToday').textContent = rows.filter(r => new Date(r.created_at).toLocaleDateString('ko-KR', {timeZone:KST}) === today).length;
+  const closeAt = settings.close_at;
+  const closed = closeAt && new Date() > new Date(closeAt);
+  $('stStatus').textContent = closed ? '마감' : '접수 중';
+  $('stStatus').style.color = closed ? 'var(--red)' : 'var(--g2)';
+  $('stStatusLabel').textContent = closeAt ? '마감 ' + fmtDT(closeAt) : '마감 없음';
+}
+
+// ---- 표 ----
+function filtered() {
+  const q = $('search').value.trim().toLowerCase();
+  const fr = $('filterRes').value, fp = $('filterPrior').value;
+  let list = rows.map((r, i) => ({ ...r, idx: i + 1 }));
+  if (q) list = list.filter(r => [r.name, r.phone, resLabel(r), r.referral, r.memo].join(' ').toLowerCase().includes(q));
+  if (fr) list = list.filter(r => r.residence === fr);
+  if (fp) list = list.filter(r => r.prior_course === fp);
+  list.sort((a, b) => {
+    let x = a[sortKey] ?? '', y = b[sortKey] ?? '';
+    if (typeof x === 'number') return sortDesc ? y - x : x - y;
+    return sortDesc ? String(y).localeCompare(String(x), 'ko') : String(x).localeCompare(String(y), 'ko');
+  });
+  return list;
+}
+function renderTable() {
+  const list = filtered();
+  document.querySelectorAll('#tbl th[data-k]').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.k === sortKey);
+    th.classList.toggle('desc', th.dataset.k === sortKey && sortDesc);
+  });
+  $('tbody').innerHTML = list.map(r => `
+    <tr data-id="${r.id}">
+      <td>${r.idx}</td>
+      <td>${fmtDT(r.created_at)}</td>
+      <td><b>${esc(r.name)}</b></td>
+      <td><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></td>
+      <td>${esc(r.gender)}</td>
+      <td>${esc(r.birth_date)}</td>
+      <td>${r.residence === '가곡동' ? '<span class="tag g">가곡동</span>' : r.residence === '밀양시(가곡동 외)' ? '<span class="tag b">' + esc(resLabel(r)) + '</span>' : '<span class="tag gray">' + esc(r.residence) + '</span>'}</td>
+      <td>${r.prior_course === '수료' ? '<span class="tag y">수료</span>' : '<span class="tag gray">미수료</span>'}</td>
+      <td>${esc(r.referral)}</td>
+      <td style="white-space:normal;max-width:180px;font-size:12px;color:#555">${esc(r.memo)}</td>
+      <td><button class="btn sec sm" data-act="detail">상세</button></td>
+    </tr>`).join('');
+  $('listMsg').textContent = `${list.length}명 표시 / 전체 ${rows.length}명`;
+  $('listMsg').className = 'msg';
+}
+['search', 'filterRes', 'filterPrior'].forEach(id => $(id).addEventListener('input', renderTable));
+document.querySelectorAll('#tbl th[data-k]').forEach(th => th.onclick = () => {
+  if (sortKey === th.dataset.k) sortDesc = !sortDesc; else { sortKey = th.dataset.k; sortDesc = false; }
+  renderTable();
+});
+$('tbody').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  const id = e.target.closest('tr').dataset.id;
+  openDetail(rows.find(r => r.id === id));
+});
+
+// ---- 상세 모달 ----
+function openDetail(r) {
+  const m = $('modal');
+  m.innerHTML = `<div class="box">
+    <h2 style="margin:0 0 12px">${esc(r.name)} <span style="font-weight:400;color:var(--sub);font-size:13px">${fmtDT(r.created_at)} 접수</span></h2>
+    <dl>
+      <dt>연락처</dt><dd><a href="tel:${esc(r.phone)}">${esc(r.phone)}</a></dd>
+      <dt>성별</dt><dd>${esc(r.gender)}</dd>
+      <dt>생년월일</dt><dd>${esc(r.birth_date)}</dd>
+      <dt>거주지</dt><dd>${esc(resLabel(r))}</dd>
+      <dt>기존 수료</dt><dd>${esc(r.prior_course)}</dd>
+      <dt>알게 된 경로</dt><dd>${esc(r.referral)}</dd>
+      <dt>동의</dt><dd>개인정보 ${r.privacy_consent ? 'O' : 'X'} · 촬영/홍보 ${r.media_consent ? 'O' : 'X'}</dd>
+    </dl>
+    <label style="font-weight:600;font-size:13px">관리자 메모 (선정 여부·연락 결과 등)</label>
+    <textarea class="memo" id="memoInput">${esc(r.memo)}</textarea>
+    <div class="row" style="margin-top:10px;justify-content:space-between">
+      <button class="btn red sm" id="delBtn">삭제</button>
+      <span>
+        <button class="btn sec sm" id="closeModal">닫기</button>
+        <button class="btn sm" id="saveMemoBtn">메모 저장</button>
+      </span>
+    </div>
+    <div class="msg" id="modalMsg"></div>
+  </div>`;
+  m.classList.remove('hidden');
+  $('closeModal').onclick = () => m.classList.add('hidden');
+  m.onclick = e => { if (e.target === m) m.classList.add('hidden'); };
+  $('saveMemoBtn').onclick = async () => {
+    const { error } = await sb.rpc('storybook_admin_memo', { p_pw: PW, p_id: r.id, p_memo: $('memoInput').value });
+    if (error) return setMsg('modalMsg', '저장 실패: ' + error.message, false);
+    r.memo = $('memoInput').value; renderTable(); setMsg('modalMsg', '저장했습니다.');
+  };
+  $('delBtn').onclick = async () => {
+    if (!confirm(`${r.name} 님 접수를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    const { error } = await sb.rpc('storybook_admin_delete', { p_pw: PW, p_id: r.id });
+    if (error) return setMsg('modalMsg', '삭제 실패: ' + error.message, false);
+    rows = rows.filter(x => x.id !== r.id); m.classList.add('hidden'); renderStats(); renderTable();
+  };
+}
+
+// ---- 내보내기 ----
+const HEAD = ['No', '접수일시', '성명', '연락처', '성별', '생년월일', '거주지', '거주지 상세', '기존 교육 수료', '알게 된 경로', '개인정보 동의', '촬영·홍보 동의', '메모'];
+const toRow = r => [r.idx, fmtDT(r.created_at), r.name, r.phone, r.gender, r.birth_date, r.residence, r.residence_detail || '', r.prior_course, r.referral, r.privacy_consent ? '동의' : '', r.media_consent ? '동의' : '', r.memo || ''];
+const fileStamp = () => new Date().toLocaleDateString('sv-SE', {timeZone:KST});
+$('xlsxBtn').onclick = () => {
+  const list = filtered();
+  const ws = XLSX.utils.aoa_to_sheet([HEAD, ...list.map(toRow)]);
+  ws['!cols'] = [4, 16, 10, 14, 5, 11, 16, 12, 10, 18, 10, 12, 30].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '접수자명단');
+  XLSX.writeFile(wb, `이야기책교육_접수자명단_${fileStamp()}.xlsx`);
+};
+$('csvBtn').onclick = () => {
+  const list = filtered();
+  const csv = [HEAD, ...list.map(toRow)].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `이야기책교육_접수자명단_${fileStamp()}.csv`; a.click();
+};
+$('copyPhonesBtn').onclick = async () => {
+  const txt = filtered().map(r => `${r.name} ${r.phone}`).join('\n');
+  await navigator.clipboard.writeText(txt);
+  setMsg('listMsg', '표시 중인 명단의 이름·연락처를 복사했습니다 (문자 발송용).');
+};
+
+// ---- 설정 ----
+function isoToLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const p = new Intl.DateTimeFormat('sv-SE', { timeZone: KST, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false }).format(d);
+  return p.replace(' ', 'T');
+}
+function renderSettings() {
+  $('closeAt').value = isoToLocalInput(settings.close_at);
+  $('applyUrl').value = settings.apply_url || '';
+}
+async function saveSetting(key, value, msgId, label) {
+  const { error } = await sb.rpc('storybook_admin_set', { p_pw: PW, p_key: key, p_value: value });
+  if (error) return setMsg(msgId, '저장 실패: ' + error.message, false);
+  settings[key] = value; setMsg(msgId, label + ' 저장했습니다.'); renderStats();
+}
+$('saveCloseBtn').onclick = () => {
+  const v = $('closeAt').value;             // yyyy-MM-ddTHH:mm (KST 입력)
+  saveSetting('close_at', v ? v + ':59+09:00' : '', 'closeMsg', v ? '마감 시각을' : '마감 없음으로');
+};
+$('resetCloseBtn').onclick = () => { $('closeAt').value = isoToLocalInput(DEFAULT_CLOSE_AT); saveSetting('close_at', DEFAULT_CLOSE_AT, 'closeMsg', '기본 마감(11/2 23:59)으로'); };
+$('saveUrlBtn').onclick = () => saveSetting('apply_url', $('applyUrl').value.trim(), 'urlMsg', '신청 페이지 주소를');
+$('copyUrlBtn').onclick = async () => {
+  const u = $('applyUrl').value.trim(); if (!u) return setMsg('urlMsg', '주소를 먼저 입력하세요.', false);
+  await navigator.clipboard.writeText(u); setMsg('urlMsg', '링크를 복사했습니다.');
+};
+$('pwBtn').onclick = async () => {
+  const np = $('newPw').value.trim();
+  if (np.length < 4) return setMsg('pwMsg', '4자 이상으로 정해 주세요.', false);
+  const { error } = await sb.rpc('storybook_admin_set', { p_pw: PW, p_key: 'admin_pw', p_value: np });
+  if (error) return setMsg('pwMsg', '변경 실패: ' + error.message, false);
+  PW = np; sessionStorage.setItem('sb_admin_pw', np); $('newPw').value = ''; setMsg('pwMsg', '비밀번호를 변경했습니다.');
+};
+
+// ---- QR ----
+$('qrBtn').onclick = async () => {
+  const u = $('applyUrl').value.trim(); if (!u) return setMsg('urlMsg', '신청 페이지 주소를 먼저 입력하세요.', false);
+  const size = parseInt($('qrSize').value, 10);
+  const canvas = $('qrCanvas');
+  await QRCode.toCanvas(canvas, u, { width: size, margin: 2, errorCorrectionLevel: 'H', color: { dark: '#111111', light: '#ffffff' } });
+  canvas.style.width = '220px'; canvas.style.height = '220px';
+  $('qrBox').classList.remove('hidden'); $('qrDownBtn').classList.remove('hidden');
+};
+$('qrDownBtn').onclick = () => {
+  const a = document.createElement('a');
+  a.href = $('qrCanvas').toDataURL('image/png');
+  a.download = `이야기책교육_신청QR_${$('qrSize').value}px.png`; a.click();
+};
+</script>
+</body>
+</html>
